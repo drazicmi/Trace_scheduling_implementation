@@ -1,0 +1,107 @@
+{
+  "program": "examples\\if_dominant.py",
+  "metrics": {
+    "program": "if_dominant",
+    "trace": [
+      "B0",
+      "B1",
+      "B2",
+      "B4",
+      "B5"
+    ],
+    "trace_probability": 0.7,
+    "cycles": {
+      "unoptimized": 7,
+      "optimized": 4,
+      "reduction_percent": 42.86
+    },
+    "wsl": {
+      "unoptimized": 7.0,
+      "optimized": 2.8,
+      "improvement_percent": 60.0
+    },
+    "critical_path": {
+      "length": 4,
+      "efficiency_before_percent": 57.14,
+      "efficiency_after_percent": 100.0,
+      "efficiency_improvement": 42.86
+    },
+    "bookkeeping": {
+      "blocks_added": 1,
+      "instructions_added": 5
+    },
+    "code_growth": {
+      "instructions": 5,
+      "percent": 41.67
+    }
+  },
+  "trace": {
+    "blocks": [
+      "B0",
+      "B1",
+      "B2",
+      "B4",
+      "B5"
+    ],
+    "probability": 0.7,
+    "side_exits": [
+      "B1->B3"
+    ],
+    "side_entrances": [
+      "B3->B4"
+    ]
+  },
+  "schedule": {
+    "optimized_makespan": 4,
+    "baseline_makespan": 7,
+    "operations": [
+      {
+        "cycle": 0,
+        "ops": [
+          "x = 10",
+          "w = 5"
+        ]
+      },
+      {
+        "cycle": 1,
+        "ops": [
+          "y = x + 1",
+          "a = w * 3"
+        ]
+      },
+      {
+        "cycle": 2,
+        "ops": [
+          "z = y * 2",
+          "b = a + 1"
+        ]
+      },
+      {
+        "cycle": 3,
+        "ops": [
+          "result = z + b"
+        ]
+      }
+    ]
+  },
+  "bookkeeping": {
+    "compensation_blocks": [
+      {
+        "target_block": "B3",
+        "operations": [
+          "y = x + 1",
+          "a = w * 3",
+          "z = y * 2",
+          "b = a + 1",
+          "result = z + b"
+        ],
+        "reason": "Split compensation: speculated ops from B1 not taken"
+      }
+    ],
+    "blocks_added": 1,
+    "instructions_added": 5,
+    "code_growth": 5,
+    "original_size": 12,
+    "final_size": 17
+  }
+}

@@ -1,0 +1,16 @@
+digraph CFG {
+  rankdir=TB;
+  node [shape=box, fontname=Helvetica];
+  B0 [label="B0: ENTRY"];
+  B1 [label="B1: x = 10\nw = 5\nIF x > 0"];
+  B2 [label="B2: y = x + 1\na = w * 3\nz = y * 2\nb = a + 1"];
+  B3 [label="B3: y = x - 1\na = w * 2\nz = y / 2\nb = a - 1"];
+  B4 [label="B4: JOIN\nresult = z + b"];
+  B5 [label="B5: EXIT"];
+  B0 -> B1;
+  B1 -> B2 [label="True\np=0.70"];
+  B1 -> B3 [label="False\np=0.30"];
+  B2 -> B4;
+  B3 -> B4;
+  B4 -> B5;
+}

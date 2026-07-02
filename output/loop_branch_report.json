@@ -1,0 +1,115 @@
+{
+  "program": "examples/loop_branch.py",
+  "metrics": {
+    "program": "loop_branch",
+    "trace": [
+      "B0",
+      "B1",
+      "B2",
+      "B3",
+      "B5",
+      "B7"
+    ],
+    "trace_probability": 0.63,
+    "cycles": {
+      "unoptimized": 6,
+      "optimized": 6,
+      "reduction_percent": 0.0
+    },
+    "wsl": {
+      "unoptimized": 6.0,
+      "optimized": 3.78,
+      "improvement_percent": 37.0
+    },
+    "critical_path": {
+      "before": 2,
+      "after": 2,
+      "reduction_percent": 0.0
+    },
+    "bookkeeping": {
+      "blocks_added": 1,
+      "instructions_added": 2
+    },
+    "code_growth": {
+      "instructions": 2,
+      "percent": 20.0
+    }
+  },
+  "trace": {
+    "blocks": [
+      "B0",
+      "B1",
+      "B2",
+      "B3",
+      "B5",
+      "B7"
+    ],
+    "probability": 0.63,
+    "side_exits": [
+      "B2->B4",
+      "B3->B6"
+    ],
+    "side_entrances": [
+      "B6->B7"
+    ]
+  },
+  "schedule": {
+    "optimized_makespan": 6,
+    "baseline_makespan": 6,
+    "operations": [
+      {
+        "cycle": 0,
+        "ops": [
+          "total = 0"
+        ]
+      },
+      {
+        "cycle": 1,
+        "ops": [
+          "even_count = 0"
+        ]
+      },
+      {
+        "cycle": 2,
+        "ops": [
+          "N = 10"
+        ]
+      },
+      {
+        "cycle": 3,
+        "ops": [
+          "total = total + i"
+        ]
+      },
+      {
+        "cycle": 4,
+        "ops": [
+          "even_count = even_count + 1"
+        ]
+      },
+      {
+        "cycle": 5,
+        "ops": [
+          "temp = i * 2"
+        ]
+      }
+    ]
+  },
+  "bookkeeping": {
+    "compensation_blocks": [
+      {
+        "target_block": "B6",
+        "operations": [
+          "even_count = even_count + 1",
+          "temp = i * 2"
+        ],
+        "reason": "Split compensation: speculated ops from B3 not taken"
+      }
+    ],
+    "blocks_added": 1,
+    "instructions_added": 2,
+    "code_growth": 2,
+    "original_size": 10,
+    "final_size": 12
+  }
+}
