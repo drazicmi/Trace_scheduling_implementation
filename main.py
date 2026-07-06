@@ -61,7 +61,10 @@ def main():
     render_dot_to_png(trace_dot, str(trace_output_png))
 
     scheduler = TraceScheduler(builder.blocks, builder.edges)
-    schedule_result = scheduler.schedule_trace(trace_id=0)
+    
+    # Get both baseline (sequential) and optimized schedules for comparison
+    baseline_result = scheduler.schedule_baseline(trace_id=0)
+    schedule_result = scheduler.schedule_trace(trace_id=0, num_units=2)
 
     bookkeeper = Bookkeeper(
         builder.blocks,
@@ -85,8 +88,39 @@ def main():
     print(f"Optimized CFG DOT written to: {optimized_output_dot}")
     print(f"Optimized CFG PNG written to: {optimized_output_png}.png")
 
-    print_section("Trace Scheduling Result")
-    print_pretty(schedule_result)
+    print_section("Schedule Comparison: Baseline vs Optimized")
+    baseline_makespan = baseline_result.get("makespan", 0)
+    optimized_makespan = schedule_result.get("makespan", 0)
+    improvement = ((baseline_makespan - optimized_makespan) / baseline_makespan * 100) if baseline_makespan > 0 else 0
+    
+    print_pretty({
+        "baseline": {
+            "makespan_cycles": baseline_makespan,
+            "functional_units": baseline_result.get("num_functional_units"),
+            "instruction_count": baseline_result.get("original_instruction_count")
+        },
+        "optimized": {
+            "makespan_cycles": optimized_makespan,
+            "functional_units": schedule_result.get("num_functional_units"),
+            "instruction_count": schedule_result.get("original_instruction_count")
+        },
+        "improvement_percent": round(improvement, 2),
+        "instruction_movements_count": len(schedule_result.get("instruction_movements", []))
+    })
+    
+    print_section("Trace Scheduling Details")
+    print_pretty({
+        "trace_id": schedule_result.get("trace_id"),
+        "block_ids": schedule_result.get("block_ids"),
+        "scheduled_instructions": [
+            {
+                "cycle": instr.get("schedule_cycle"),
+                "instruction": instr.get("instruction"),
+                "block_id": instr.get("block_id")
+            }
+            for instr in schedule_result.get("scheduled_instructions", [])
+        ]
+    })
 
     print_section("Optimized CFG Summary")
     print_pretty({
@@ -94,11 +128,14 @@ def main():
         "moved_operations": [
             {
                 "instruction": item["instruction"],
-                "original_index": item["original_index"],
-                "new_index": item["schedule_index"]
+                "original_index": item.get("original_index", 0),
+                "scheduled_cycle": item.get("schedule_cycle", item.get("schedule_index", 0))
             }
             for item in optimized_cfg["moved_operations"]
         ],
+        "split_compensation_count": optimized_cfg.get("split_compensation_count", 0),
+        "join_compensation_count": optimized_cfg.get("join_compensation_count", 0),
+        "total_compensation_instructions": optimized_cfg.get("total_compensation_instructions", 0),
         "added_compensation_blocks": [
             {
                 "block_id": block.id,
