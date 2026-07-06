@@ -1,9 +1,9 @@
-
-# This class implements greedy trace selection for trace scheduling optimization.
 class TraceSelector:
+    """
+        This class implements greedy trace selection for trace scheduling optimization.
+    """
     # Initialize the trace selector with CFG data
     def __init__(self, blocks, edges):
-
         self.blocks = blocks
         self.edges = edges
 
@@ -18,9 +18,40 @@ class TraceSelector:
     def get_outgoing_edges(self, block_id):
         return [edge for edge in self.edges if edge.src == block_id]
 
+    # Mark blocks and edges as belonging to a specific trace
+    def mark_trace(self, trace_blocks, trace_edges, trace_id=0):
+
+        # Assign trace ID to each block in the trace
+        for block in trace_blocks:
+            block.trace_id = trace_id
+
+        # Mark edges as trace edges for visualization
+        for edge in trace_edges:
+            edge.is_trace_edge = True
+
+    # Identify side entries (joins from outside) and side exits (branches leaving trace)
+    def mark_side_entries_and_exits(self, trace_blocks, trace_edges):
+
+        trace_block_ids = {block.id for block in trace_blocks}
+        trace_edge_keys = {(edge.src, edge.dst, edge.label) for edge in trace_edges}
+
+        # Check each edge in the CFG
+        for edge in self.edges:
+            # Skip edges that are part of the trace
+            if (edge.src, edge.dst, edge.label) in trace_edge_keys:
+                continue
+
+            # Side entry: edge from outside trace into a trace block
+            if edge.src not in trace_block_ids and edge.dst in trace_block_ids:
+                edge.is_side_entry = True
+
+            # Side exit: edge from trace block to outside trace
+            if edge.src in trace_block_ids and edge.dst not in trace_block_ids:
+                edge.is_side_exit = True
+
     # Select the most probable trace path using greedy algorithm
     def select_trace(self, start_block_id=0, trace_id=0):
-        
+
         trace_blocks = []
         trace_edges = []
         visited = set()
@@ -63,39 +94,9 @@ class TraceSelector:
 
         # Mark selected blocks and edges as part of the trace
         self.mark_trace(trace_blocks, trace_edges, trace_id)
-        
+
         # Identify side entries and exits for bookkeeping
         self.mark_side_entries_and_exits(trace_blocks, trace_edges)
 
         return trace_blocks, trace_edges
 
-    # Mark blocks and edges as belonging to a specific trace
-    def mark_trace(self, trace_blocks, trace_edges, trace_id=0):
-        
-        # Assign trace ID to each block in the trace
-        for block in trace_blocks:
-            block.trace_id = trace_id
-
-        # Mark edges as trace edges for visualization
-        for edge in trace_edges:
-            edge.is_trace_edge = True
-
-    # Identify side entries (joins from outside) and side exits (branches leaving trace)
-    def mark_side_entries_and_exits(self, trace_blocks, trace_edges):
-        
-        trace_block_ids = {block.id for block in trace_blocks}
-        trace_edge_keys = {(edge.src, edge.dst, edge.label) for edge in trace_edges}
-
-        # Check each edge in the CFG
-        for edge in self.edges:
-            # Skip edges that are part of the trace
-            if (edge.src, edge.dst, edge.label) in trace_edge_keys:
-                continue
-
-            # Side entry: edge from outside trace into a trace block
-            if edge.src not in trace_block_ids and edge.dst in trace_block_ids:
-                edge.is_side_entry = True
-
-            # Side exit: edge from trace block to outside trace
-            if edge.src in trace_block_ids and edge.dst not in trace_block_ids:
-                edge.is_side_exit = True
