@@ -2,21 +2,15 @@ digraph CFG {
   rankdir=TB;
   node [shape=box, fontname=Helvetica];
   B0 [label="B0: ENTRY", style="filled", fillcolor="lightyellow"];
-  B1 [label="B1: seed = x + 10\nIF[0] x > 0", style="filled", fillcolor="lightyellow"];
-  B2 [label="B2: a = y + 1\nb = z * 2\nc = y - z\nhot = a + b", style="filled", fillcolor="lightyellow"];
-  B3 [label="B3: a = y - 1\nb = z + 2\nc = y + z\nhot = a - b"];
-  B4 [label="B4: JOIN\nout = hot + seed\nreturn out", style="filled", fillcolor="lightyellow"];
+  B1 [label="B1: entry = a + 1\nIF[0] f > 1", style="filled", fillcolor="lightyellow"];
+  B2 [label="B2: p = a + c\nq = c + d\nw = p + q\nlight = b + 1\ndeep = w * 2\nhot = deep + e", style="filled", fillcolor="lightyellow"];
+  B3 [label="B3: p = a - c\nq = c - d\nhot = p - q"];
+  B4 [label="B4: JOIN\nout = hot + entry\nreturn out", style="filled", fillcolor="lightyellow"];
   B5 [label="B5: EXIT", style="filled", fillcolor="lightyellow"];
-  B6 [label="B6: SPLIT_COMP: b = z * 2\nSPLIT_COMP: hot = a + b\nSPLIT_COMP: c = y - z\nSPLIT_COMP: out = hot + seed\nSPLIT_COMP: return out", color="purple", style="filled", fillcolor="purple"];
-  B7 [label="B7: JOIN_COMP: b = z * 2\nJOIN_COMP: hot = a + b\nJOIN_COMP: c = y - z\nJOIN_COMP: out = hot + seed\nJOIN_COMP: return out", color="purple", style="filled", fillcolor="purple"];
   B0 -> B1 [color="red", penwidth=2.0];
-  B1 -> B2 [label="True | 0.80", color="red", penwidth=2.0];
-  B1 -> B3 [label="False | 0.20", color="blue", style="dashed"];
+  B1 -> B2 [label="True | 0.82", color="red", penwidth=2.0];
+  B1 -> B3 [label="False | 0.18", color="blue", style="dashed"];
   B2 -> B4 [color="red", penwidth=2.0];
   B3 -> B4 [color="blue", style="dashed"];
   B4 -> B5 [color="red", penwidth=2.0];
-  B1 -> B6 [label="split_comp_False", color="purple", penwidth=2.0];
-  B6 -> B3 [label="resume"];
-  B3 -> B7 [label="join_comp_", color="purple", penwidth=2.0];
-  B7 -> B4 [label="resume"];
 }

@@ -1,195 +1,143 @@
-# Trace Scheduling Implementation
+# Trace Scheduling Compiler Optimization Pipeline
 
-A trace scheduling optimization pipeline for Python programs, developed as a PAR course project at ETF Belgrade.
+A from-scratch implementation of trace scheduling, a classic instruction-scheduling compiler optimization originally developed for VLIW/superscalar architectures. The pipeline takes a single Python function, profiles its branch behavior, selects the most likely execution path (the "trace"), reschedules instructions along that trace for instruction-level parallelism, and inserts bookkeeping/compensation code to preserve correctness on the less-likely paths.
 
-## Overview
+The project is built entirely with the Python standard library plus graphviz for visualization — no scheduling frameworks or compiler infrastructure dependencies.
 
-This project implements a complete trace scheduling compiler optimization pipeline:
+## Pipeline Overview
 
-1. **CFG Construction** - Builds control flow graphs from Python source code via AST parsing
-2. **Branch Probability Analysis** - Assigns edge probabilities using heuristics or profile data
-3. **Trace Selection** - Greedy selection of the most likely execution path
-4. **List Scheduling** - Schedules operations within traces respecting data dependencies
-5. **Bookkeeping** - Generates compensation code for side exits and join points
-6. **Metrics** - Computes and compares optimization quality metrics
+    input.py  --->  PythonToCFG  --->  TraceSelection  --->  TraceScheduling  --->  Bookkeeping  --->  MetricsComputation
+                    (build + profile      (pick hottest        (list-schedule        (insert split/         (formal
+                     CFG, branch           path through          trace for ILP,       join compensation       evaluation
+                     probabilities)        the CFG)              detect moved         to fix up side           report)
+                                                                  instructions)        entries/exits)
 
-## Installation
+Each stage is implemented as an independent module/class, orchestrated by main.py.
 
-```bash
-pip install -r requirements.txt
-```
+### 1. PythonToCFG
 
-For PNG visualization, install Graphviz system package:
-- Windows: `choco install graphviz` or download from https://graphviz.org/download/
-- Linux: `apt install graphviz`
-- macOS: `brew install graphviz`
+- Parses input.py (must contain exactly one top-level function plus a TEST_INPUTS list of exactly 100 sample inputs).
+- Builds a control flow graph (CFG) of Block/Edge objects directly from the function's AST, handling if, while, for, and return.
+- Instruments a copy of the AST with profiling calls, then executes the function on all 100 test inputs to record how many times each branch is actually taken.
+- Converts raw counts into edge probabilities (edge.probability = edge.count / total_outgoing_count).
+- Emits the CFG as a Graphviz .dot file and renders it to .png.
 
-## Input/Output Specification
+### 2. TraceSelection
 
-### Input
+- Implements greedy trace selection: starting at the entry block, repeatedly follows the highest-probability outgoing edge (ignoring loop-back edges) until it hits a dead end or would revisit a block.
+- Marks the resulting sequence of blocks/edges as the selected trace (trace_id).
+- Identifies side entries (edges from outside the trace into it) and side exits (edges leaving the trace) — these are exactly the points where bookkeeping will later be required.
 
-**Required:**
-- `--source PATH` - Python source file containing:
-  - `if`/`else` statements
-  - `while` loops
-  - `for` loops (including `range()`)
-  - Variable assignments
-  - `break`/`continue` statements
-  - `return` statements
+### 3. TraceScheduling
 
-**Optional:**
-- `--profile PATH` - JSON file overriding default branch probabilities:
-  ```json
-  {
-    "edges": {
-      "B1->B2": 0.9,
-      "B1->B3": 0.1
-    }
-  }
-  ```
+- Flattens the trace's instructions into a single list and builds a data-dependency graph (RAW/WAR/WAW hazards via AST-level read/write analysis) plus a relaxed control-dependence rule: an operation only depends on a branch header if it is actually inside the region that header guards, not merely because it appears later in the trace. This is what allows genuine cross-block instruction hoisting.
+- Runs a list scheduling algorithm across a configurable number of functional units (default 2), prioritizing operations by critical-path length and descendant count — the same greedy heuristic used in classical VLIW schedulers.
+- Produces both a baseline schedule (naive, one instruction per cycle, single unit) and an optimized schedule, and precisely detects which instructions were moved earlier than their original program order (instruction_movements).
 
-### Output
+### 4. Bookkeeping
 
-The pipeline generates the following files in the output directory:
+- For every side exit/side entry identified in step 2, computes exactly which hoisted instructions must be replayed as compensation code so that off-trace paths still observe correct program semantics.
+- Synthesizes new compensation blocks (SPLIT_COMP: / JOIN_COMP: prefixed statements) and reroutes the relevant CFG edges through them.
+- Reorders each trace block's visible statements to reflect the actual scheduled order, so the optimized CFG faithfully shows the effect of scheduling.
+- Emits the optimized CFG (with compensation blocks highlighted in purple) as .dot/.png.
 
-| File | Description |
-|------|-------------|
-| `{program}_cfg.dot` | Full CFG in Graphviz DOT format with probabilities |
-| `{program}_trace.dot` | CFG with selected trace highlighted |
-| `{program}_cfg.png` | PNG visualization of CFG (if Graphviz installed) |
-| `{program}_trace.png` | PNG visualization with trace highlighted |
-| `{program}_report.json` | Detailed scheduling report with all metrics |
+### 5. MetricsComputation
 
-### Report JSON Structure
+Computes a formal evaluation report comparing the baseline and optimized schedules:
 
-```json
-{
-  "program": "examples/join_bookkeeping.py",
-  "metrics": {
-    "trace": ["B0", "B1", "B2", "B4"],
-    "cycles": { "unoptimized": 12, "optimized": 8, "reduction_percent": 33.33 },
-    "wsl": { "unoptimized": 9.6, "optimized": 6.4, "improvement_percent": 33.33 },
-    "critical_path": { "before": 6, "after": 4, "reduction_percent": 33.33 },
-    "bookkeeping": { "blocks_added": 1, "instructions_added": 2 },
-    "code_growth": { "instructions": 2, "percent": 10.0 }
-  },
-  "trace": { ... },
-  "schedule": { ... },
-  "bookkeeping": { ... }
-}
-```
+Scheduling quality
+- Unoptimized vs. optimized cycle counts (schedule makespan)
+- Whether the critical path was reduced
+- Weighted Schedule Length (WSL), defined as:
 
-## Usage
+  W(S) = sum over all relevant paths j of ( Wj * |Sj| )
 
-### Analyze a single file
+  where Wj is a path's probability weight and |Sj| is its scheduled length. Relevant paths are the main trace (weighted by the product of in-trace branch probabilities) plus one path per side exit actually observed during profiling (weighted by that branch's probability, with compensation instructions added to its length). Both baseline and optimized WSL are reported.
 
-```bash
-python -m trace_scheduling.main --source examples/if_dominant.py
-```
+Optimization cost
+- Total code size increase (real instructions added to the CFG)
+- Number of added bookkeeping blocks (split vs. join compensation)
+- Number of added bookkeeping instructions
 
-### Analyze with custom profile
+## Example Output
 
-```bash
-python -m trace_scheduling.main --source input.py --profile profile.json
-```
+    ==================================================================
+                FORMAL TRACE SCHEDULING EVALUATION REPORT
+    ==================================================================
+      Trace ID: 0
 
-### Run all examples
+    1. Scheduling Quality
+    ---------------------
+      Metric                                       Value
+      ---------------------------------- ---------------
+      Unoptimized program cycles                   11
+      Optimized program cycles                     10
+      Cycles reduced                                1
+      Critical path status                    REDUCED
 
-```bash
-python -m trace_scheduling.main --all
-```
+      Baseline WSL  W(S_base)                   8.154
+      Optimized WSL W(S_opt)                    8.069
+      WSL result                             IMPROVED
 
-### Legacy CFG-only mode
+    2. Optimization Cost
+    --------------------
+      Metric                                       Value
+      ---------------------------------- ---------------
+      Original code size (instr.)                  14
+      Optimized code size (instr.)                 18
+      Total code size increase                      4
+      Added bookkeeping blocks                      4
+        - split-compensation blocks                 2
+        - join-compensation blocks                  2
+      Added bookkeeping instructions                4
 
-```bash
-python PythonToCFG.py --source input.py --output output.dot
-```
-
-## Metrics
-
-### Quality Metrics
-
-| Metric | Definition |
-|--------|------------|
-| **Cycles** | Makespan (total execution time) of scheduled operations |
-| **WSL (Weighted Schedule Length)** | `W(S) = Σ_j ω_j × \|S_j\|` where ω_j is path probability |
-| **Critical Path** | Longest dependency chain in the schedule |
-
-### Cost Metrics
-
-| Metric | Definition |
-|--------|------------|
-| **Bookkeeping Blocks** | Number of compensation blocks added |
-| **Bookkeeping Instructions** | Total compensation instructions inserted |
-| **Code Growth** | Net increase in instruction count |
-
-## Algorithm Details
-
-### Branch Probability Heuristics
-
-| Construct | Default Probability |
-|-----------|---------------------|
-| `if` True branch | 0.7 |
-| `if` False branch | 0.3 |
-| `for`/`while` back edge | N/(N+1) where N is trip count |
-| Loop exit edge | 1/(N+1) |
-| `while True` body | 0.99 |
-
-### Trace Selection
-
-Greedy algorithm starting from ENTRY:
-1. Follow highest-probability non-back edge
-2. Stop at EXIT or when no unvisited edges remain
-3. Record side exits (non-taken branches) and side entrances (joins from outside trace)
-
-### Bookkeeping
-
-Two types of compensation code:
-- **Split compensation**: When operations are speculatively executed past a branch, copy them to the non-taken path
-- **Join compensation**: When operations are moved above a join point, ensure correctness on paths entering from outside the trace
-
-## Test Examples
-
-### (a) If-Then Dominant Branch (`examples/if_dominant.py`)
-Tests basic trace selection with a high-probability True branch.
-
-### (b) Loop with Branching (`examples/loop_branch.py`)
-Tests loop probability heuristics and nested branching.
-
-### (c) Join/Bookkeeping Test (`examples/join_bookkeeping.py`)
-Tests that optimizing trace A→B→D doesn't break path A→C→D by requiring join compensation at D.
+A VERBOSE flag in main.py optionally prints full per-cycle schedules, instruction movement lists, and compensation block/edge dumps for detailed debugging.
 
 ## Project Structure
 
-```
-trace_scheduling/
-├── cfg/
-│   ├── builder.py      # CFGBuilder, Block classes
-│   └── graph.py        # CFGGraph wrapper with adjacency
-├── analysis/
-│   └── probabilities.py # Branch probability heuristics
-├── trace/
-│   └── selector.py     # Greedy trace selection
-├── schedule/
-│   └── list_scheduler.py # List scheduling with dependencies
-├── bookkeeping/
-│   └── compensation.py  # Compensation code generation
-├── metrics/
-│   └── evaluator.py    # Metrics computation
-└── main.py             # CLI entry point
+    project/
+    ├── main.py                          # Orchestrates the full pipeline and prints the formal report
+    ├── PythonToCFG/
+    │   └── PythonToCFG.py                # AST -> CFG construction, profiling, probability computation
+    ├── TraceSelection/
+    │   └── TraceSelection.py             # Greedy trace selection, side entry/exit detection
+    ├── TraceScheduling/
+    │   └── TraceScheduling.py            # Dependency graph construction + list scheduling
+    ├── Bookkeeping/
+    │   └── Bookkeeping.py                # Split/join compensation block synthesis, CFG rewriting
+    └── MetricsComputation/
+        └── MetricsComputation.py         # WSL, cycle count, and code-size/bookkeeping cost metrics
 
-examples/
-├── if_dominant.py      # Test case (a)
-├── loop_branch.py      # Test case (b)
-└── join_bookkeeping.py # Test case (c)
-```
+## Usage
 
-## References
+1. Write your target function and its 100 test inputs into PythonToCFG/input.py:
 
-- Fisher, J.A. (1981). "Trace Scheduling: A Technique for Global Microcode Compaction"
-- Hwu, W.W. et al. (1993). "The Superblock: An Effective Technique for VLIW and Superscalar Compilation"
-- Lowney, P.G. et al. (1993). "The Multiflow Trace Scheduling Compiler"
+       def my_function(x, y):
+           if x > y:
+               return x - y
+           else:
+               return y - x
 
-## License
+       TEST_INPUTS = [(1, 2), (5, 3), ...]  # exactly 100 tuples/values
 
-GNU General Public License v3.0
+2. Run the pipeline:
+
+       python3 main.py
+
+3. Inspect the generated artifacts:
+   - PythonToCFG/cfg_output.png — the profiled, unoptimized CFG
+   - TraceSelection/trace_output.png — the CFG with the selected trace highlighted
+   - TraceScheduling/optimized_trace.png — the final optimized CFG with compensation blocks
+   - Console output — the formal scheduling quality / optimization cost report
+
+## Design Notes and Known Limitations
+
+- The relaxed control-dependence rule enables genuine cross-block instruction movement, but side-effecting operations (function calls) remain full scheduling barriers, since speculating those safely would require more machinery than simple compensation blocks provide.
+- WSL path weights account for probability only at the point a path diverges from the trace; nested divergence further down a side path is not separately modeled, consistent with the project's single-trace scope.
+- Bookkeeping instruction cost is approximated at 1 cycle per compensation instruction, since compensation blocks are not run through the list scheduler themselves.
+- Unparseable/unknown instructions are treated conservatively (assumed to read/write all variables and have a call) so the scheduler never unsafely reorders around code it cannot analyze.
+
+## Requirements
+
+- Python 3.9+
+- [Graphviz](https://graphviz.org/) (system package) + the graphviz Python package, for .dot to .png rendering
