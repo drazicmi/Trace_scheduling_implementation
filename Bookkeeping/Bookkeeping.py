@@ -41,14 +41,6 @@ class Bookkeeper:
         return side_entries, side_exits
 
     # Detect operations that were moved earlier in the schedule than their original position.
-    #
-    # This now delegates to TraceScheduler.detect_instruction_movements' exact result
-    # (schedule_result["instruction_movements"]) instead of re-deriving movement with a
-    # cheap "schedule_cycle < original_index" comparison, which compares two numbers on
-    # unrelated scales (a cycle count vs. a flattened instruction index) and produces
-    # both false positives and false negatives. If the exact movements are not present
-    # (e.g. an older schedule_result), fall back to the previous heuristic so this stays
-    # backward compatible with other callers.
     def collect_moved_operations(self, schedule_result):
         movements = schedule_result.get("instruction_movements")
         scheduled = schedule_result.get("scheduled_instructions", [])
@@ -68,23 +60,6 @@ class Bookkeeper:
         return moved_ops
     
     # Analyze which instructions need split compensation for a SPECIFIC side exit.
-    #
-    # Split compensation is needed at a side-exit edge (exit_edge.src -> exit_edge.dst,
-    # where exit_edge.dst is OUTSIDE the trace) when the scheduler has speculatively
-    # hoisted instructions that originally lived in trace blocks AFTER exit_edge.src
-    # to execute at or before the point where exit_edge.src finishes. Those
-    # instructions' effects are baked into the fast (on-trace) path, but the sequence
-    # of code the side-exit path jumps to was never rebuilt to expect them, so a
-    # compensation block replays exactly those hoisted instructions on the side-exit
-    # path before continuing to exit_edge.dst.
-    #
-    # This is now computed strictly per boundary: only operations whose ORIGINAL block
-    # is strictly after exit_edge.src in trace order, AND that are confirmed as moved
-    # earlier (rank-exact, from collect_moved_operations/instruction_movements), AND
-    # whose scheduled position is at/py before the exit block's last scheduled
-    # instruction, are included. There is no fallback to the global moved-ops list:
-    # if no operations satisfy these exact conditions for this boundary, this returns
-    # an empty list and the caller must NOT synthesize a compensation block.
     def get_split_compensation_ops(self, exit_edge, schedule_result, trace_id=0):
         trace_blocks = self.get_trace_blocks(trace_id)
         trace_block_ids = [b.id for b in trace_blocks]
@@ -95,18 +70,14 @@ class Bookkeeper:
         exit_block_index = trace_block_ids.index(exit_edge.src)
         scheduled = schedule_result.get("scheduled_instructions", [])
 
-        # Exact set of operations the scheduler actually moved earlier (by rank).
+        # Exact set of operations the scheduler actually moved earlier
         moved_ops = self.collect_moved_operations(schedule_result)
         moved_op_ids = {op.get("op_id") for op in moved_ops if op.get("op_id") is not None}
         if not moved_op_ids:
             return []
 
         # Last cycle at which exit_edge.src's own instructions execute — this is the
-        # point at which the branch decision for this exact edge is effectively made.
-        # Computed only from this block's UN-MOVED ("anchor") instructions, so a
-        # candidate moved op is never compared against a cycle that it itself
-        # contributed (which would make the boundary self-referential and always
-        # fail for the earliest-moved op in a block).
+        # point at which the branch decision for this exact edge is effectively made
         exit_block_last_cycle = -1
         for item in scheduled:
             if item.get("block_id") == exit_edge.src and item.get("op_id") not in moved_op_ids:
@@ -134,16 +105,6 @@ class Bookkeeper:
         return compensation_ops
 
     # Analyze which instructions need join compensation for a SPECIFIC side entry.
-    #
-    # Join compensation is needed at a side-entry edge (entry_edge.src -> entry_edge.dst,
-    # where entry_edge.src is OUTSIDE the trace and entry_edge.dst is IN the trace) when
-    # the scheduler has hoisted instructions that originally belonged to entry_edge.dst
-    # (or later trace blocks) to execute earlier than entry_edge.dst's normal starting
-    # point. A path arriving via the side entry never executed that hoisted code, so a
-    # compensation block must replay it before continuing into entry_edge.dst.
-    #
-    # Computed strictly per boundary, same exact-movement source as split compensation,
-    # with no fallback to the global moved-ops list.
     def get_join_compensation_ops(self, entry_edge, schedule_result, trace_id=0):
         trace_blocks = self.get_trace_blocks(trace_id)
         trace_block_ids = [b.id for b in trace_blocks]
@@ -161,10 +122,6 @@ class Bookkeeper:
 
         # First cycle at which entry_edge.dst's own instructions execute in the
         # schedule — this is where a side-entry path would normally join in.
-        # Computed only from this block's UN-MOVED ("anchor") instructions, so a
-        # candidate moved op is never compared against a cycle that it itself
-        # contributed (which would make the boundary self-referential and always
-        # fail for the earliest-moved op in a block).
         entry_block_first_cycle = float('inf')
         for item in scheduled:
             if item.get("block_id") == entry_edge.dst and item.get("op_id") not in moved_op_ids:
@@ -258,34 +215,6 @@ class Bookkeeper:
 
     # Reorder each trace block's visible statements to reflect the ACTUAL scheduled
     # order, instead of leaving the original textual order in place.
-    #
-    # Two kinds of non-data statements exist in a block's statement list:
-    #  - Pure structural markers (ENTRY/EXIT/JOIN/AFTER_LOOP/AFTER_FOR): these have no
-    #    schedule_cycle at all (collect_trace_instructions filters them out before the
-    #    scheduler ever sees them), so they are left anchored at the front of the
-    #    block — there is no scheduled position to place them at.
-    #  - Control headers (IF[..]/WHILE[..]/FOR[..]): these DO get scheduled (they carry
-    #    real cycle placement and participate in the dependency graph as barriers), so
-    #    they are treated as regular scheduled instructions and placed at their actual
-    #    scheduled position alongside the data operations, instead of being forced to
-    #    the front regardless of when they were actually scheduled.
-    #
-    # CROSS-BLOCK RELOCATION: with the relaxed control-dependence rule in
-    # TraceScheduler.build_dependency_graph, an operation can now be
-    # genuinely hoisted to run during an EARLIER block's cycle window than
-    # the block it originally lived in. When that happens, the optimized CFG
-    # should show the statement actually living in the block it now executes
-    # alongside -- not just reordered within its original block -- otherwise
-    # the DOT output would misrepresent the schedule. We detect this using
-    # the exact instruction_movements the scheduler already computed
-    # (schedule_result["instruction_movements"], produced by
-    # TraceScheduler.detect_instruction_movements): for each moved op, its
-    # DESTINATION block is whichever trace block's own (non-hoisted)
-    # instructions bracket its schedule_cycle -- i.e. the block whose
-    # instructions are executing during that cycle in the final schedule.
-    #
-    # Schedulable instructions are ordered by (schedule_cycle, op_id) for a
-    # stable, deterministic order within whichever block they end up in.
     def reorder_blocks_by_schedule(self, blocks, schedule_result, trace_id=0):
         scheduled = schedule_result.get("scheduled_instructions", [])
         if not scheduled:
@@ -301,9 +230,7 @@ class Bookkeeper:
         trace_index = {bid: i for i, bid in enumerate(trace_block_ids)}
 
         # Determine each block's own cycle window from the instructions that
-        # were NOT hoisted out of it (its "anchor" instructions), so a moved
-        # op's destination can be resolved against blocks' real execution
-        # windows rather than being circularly affected by other moved ops.
+        # were NOT hoisted out of it (its "anchor" instructions)
         anchor_items = [item for item in scheduled if item.get("op_id") not in moved_op_ids]
         block_last_cycle = {}
         for item in anchor_items:
@@ -322,8 +249,7 @@ class Bookkeeper:
 
             # Walk earlier trace blocks (closest first) and relocate into the
             # first one whose own instructions are still executing at/after
-            # this cycle -- i.e. the earliest block this op could have
-            # actually been co-scheduled into given its new cycle.
+            # this cycle
             best_block = orig_block
             for bid in trace_block_ids[:orig_pos]:
                 last_cycle = block_last_cycle.get(bid)
@@ -334,12 +260,7 @@ class Bookkeeper:
 
         # Group scheduled instructions (including control headers) by the
         # block they ended up executing in (their destination, which may
-        # differ from their original block_id for genuinely hoisted ops), in
-        # schedule order. Within the same cycle, preserve the exact order
-        # list_schedule emitted them in (its priority function already
-        # resolved ties via critical-path/descendant/original-index
-        # heuristics) rather than re-sorting by op_id, which would silently
-        # invert the scheduler's real within-cycle ordering decisions.
+        # differ from their original block_id for genuinely hoisted ops)
         by_block = {}
         for item in sorted(
             enumerate(scheduled),
@@ -384,7 +305,7 @@ class Bookkeeper:
         # edges we later remove/replace are the same objects living in new_edges).
         side_entries, side_exits = self.collect_side_edges_from(new_edges)
 
-        # Get all operations that were moved earlier in the schedule (exact, rank-based)
+        # Get all operations that were moved earlier in the schedule
         moved_ops = self.collect_moved_operations(schedule_result)
 
         block_id_counter = self.next_block_id(new_blocks)
@@ -399,10 +320,6 @@ class Bookkeeper:
             # Get instructions that need compensation for this specific exit
             comp_ops = self.get_split_compensation_ops(exit_edge, schedule_result, trace_id)
 
-            # NOTE: no fallback to the global moved_ops list here. If nothing was
-            # actually hoisted across THIS boundary, no compensation block is created
-            # and the original edge is left untouched — this is what keeps the
-            # optimized CFG from bloating with irrelevant compensation code.
             if comp_ops:
                 # Create compensation block with all required instructions
                 comp_statements = [
@@ -449,8 +366,6 @@ class Bookkeeper:
             # Get instructions that need compensation for this specific entry
             comp_ops = self.get_join_compensation_ops(entry_edge, schedule_result, trace_id)
 
-            # NOTE: no fallback to the global moved_ops list here either, for the same
-            # reason as split compensation above.
             if comp_ops:
                 # Create compensation block with all required instructions
                 comp_statements = [
@@ -484,7 +399,7 @@ class Bookkeeper:
                     )
                 )
 
-                # Same reasoning as the split-exit case: the direct entry_edge.src ->
+                # the direct entry_edge.src ->
                 # entry_edge.dst path must not stay active alongside the rerouted
                 # compensation path, or the side-entry path could bypass the join
                 # compensation entirely.
