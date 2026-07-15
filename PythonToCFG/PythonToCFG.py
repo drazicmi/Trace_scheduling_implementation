@@ -3,6 +3,8 @@ import copy    # Deepcopy tree
 from dataclasses import dataclass, field    # Annotation that generates dunder methods (like __init__, __repr__, etc.)
 from typing import List, Optional     # DataTypes used as fields in classes
 from collections import defaultdict    # DataType that creates
+
+import graphviz
 from graphviz import Source     # CFG visualisation library
 
 """
@@ -590,6 +592,46 @@ def extract_target_function_and_inputs(tree):
 
     return target_function, test_inputs
 
+import ast
+import graphviz
+
+
+# AST visualization
+def ast_to_graphviz(node, graph=None, parent=None, counter=[0], depth=1,
+                     max_depth=None, skip_assign_names=("TEST_INPUTS",)):
+    if graph is None:
+        graph = graphviz.Digraph()
+    node_id = str(counter[0])
+    counter[0] += 1
+    label = type(node).__name__
+    if isinstance(node, ast.Name):
+        label += f"\n{node.id}"
+    graph.node(node_id, label)
+    if parent is not None:
+        graph.edge(parent, node_id)
+
+    # To make TEST_INPUTS part of the graph smaller, add just that assign node, and skip all other assigns that are related
+    if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in skip_assign_names for t in node.targets):
+        stub_id = str(counter[0])
+        counter[0] += 1
+        graph.node(stub_id, "[... data omitted ...]", shape="plaintext")
+        graph.edge(node_id, stub_id)
+        return graph
+
+    # Depth limit reached: if this node still has children, add a single "..." placeholder so it's visually clear the tree was truncated here
+    if max_depth is not None and depth >= max_depth:
+        children = list(ast.iter_child_nodes(node))
+        if children:
+            stub_id = str(counter[0])
+            counter[0] += 1
+            graph.node(stub_id, "...", shape="plaintext")
+            graph.edge(node_id, stub_id)
+        return graph
+
+    for child in ast.iter_child_nodes(node):
+        ast_to_graphviz(child, graph, node_id, counter, depth + 1, max_depth, skip_assign_names)
+    return graph
+
 
 def build_profiled_cfg(input_file='input.py', output_dot=None, output_png=None):
     """
@@ -603,6 +645,10 @@ def build_profiled_cfg(input_file='input.py', output_dot=None, output_png=None):
     # Tree building
     # Parse the python code and get AST (Abstract syntax tree) in return
     tree = ast.parse(source, filename=input_file)
+
+    # Display ASTT
+    g = ast_to_graphviz(tree)
+    g.render("ast_tree", format="svg", cleanup=True)
 
     # Extract target function and TEST_INPUTS
     target_function, test_inputs = extract_target_function_and_inputs(tree)
