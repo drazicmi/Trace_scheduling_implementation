@@ -21,7 +21,7 @@ from graphviz import Source     # CFG visualisation library
 class Block:
     """
         BLock class representing a basic block
-        Each block has a id and list of statements (lines of code basically)
+        Each block has an id and list of statements (lines of code basically)
     """
 
     id: int
@@ -604,7 +604,7 @@ def build_profiled_cfg(input_file='input.py', output_dot=None, output_png=None):
     # Parse the python code and get AST (Abstract syntax tree) in return
     tree = ast.parse(source, filename=input_file)
 
-    # Extract target funtion and TEST_INPUTS
+    # Extract target function and TEST_INPUTS
     target_function, test_inputs = extract_target_function_and_inputs(tree)
 
     # Instantiates a visitor that walks the AST and assigns a unique cfg_id integer to each control-flow node (If, While, For).
@@ -650,11 +650,7 @@ def main():
     output_file = 'output.dot'
     output_png = 'cfg_output'
 
-    builder, entry_block, exit_block, dot = build_profiled_cfg(
-        input_file=input_file,
-        output_dot=output_file,
-        output_png=output_png
-    )
+    builder, entry_block, exit_block, dot = build_profiled_cfg(input_file=input_file, output_dot=output_file, output_png=output_png)
 
 
 if __name__ == '__main__':

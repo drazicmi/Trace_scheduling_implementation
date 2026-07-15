@@ -79,14 +79,12 @@ def main():
     optimized_output_dot = TRACE_SCHEDULING_DIR / "optimized_trace.dot"
     optimized_output_png = TRACE_SCHEDULING_DIR / "optimized_trace"
 
-    # --- PythonToCFG ---
-    builder, entry_block, exit_block, _ = build_profiled_cfg(
-        input_file=str(input_file),
-        output_dot=str(cfg_output_dot),
-        output_png=str(cfg_output_png)
-    )
+    # PythonToCFG
+    # INPUT : input path, output dot path, output png path
+    # RETURN : CFG Builder object, entry block, exit block (not used),
+    builder, entry_block, _, _ = build_profiled_cfg(input_file=str(input_file), output_dot=str(cfg_output_dot), output_png=str(cfg_output_png))
 
-    # --- TraceSelection ---
+    # TraceSelection
     selector = TraceSelector(builder.blocks, builder.edges)
     selector.select_trace(start_block_id=entry_block.id, trace_id=0)
 
@@ -95,12 +93,12 @@ def main():
         f.write(trace_dot)
     render_dot_to_png(trace_dot, str(trace_output_png))
 
-    # --- TraceScheduling ---
+    # TraceScheduling
     scheduler = TraceScheduler(builder.blocks, builder.edges)
     baseline_result = scheduler.schedule_baseline(trace_id=0)
     schedule_result = scheduler.schedule_trace(trace_id=0, num_units=2)
 
-    # --- Bookkeeping ---
+    # Bookkeeping
     bookkeeper = Bookkeeper(builder.blocks, builder.edges, block_factory=block_factory, edge_factory=edge_factory)
     optimized_cfg = bookkeeper.build_optimized_cfg(schedule_result, trace_id=0)
     optimized_dot = bookkeeper.to_dot(optimized_cfg["blocks"], optimized_cfg["edges"])
@@ -109,7 +107,7 @@ def main():
         f.write(optimized_dot)
     render_dot_to_png(optimized_dot, str(optimized_output_png))
 
-    # --- MetricsComputation ---
+    # MetricsComputation
     metrics = MetricsComputer(builder.blocks, builder.edges)
     report = metrics.compute_formal_report(baseline_result=baseline_result, schedule_result=schedule_result, bookkeeping_result=optimized_cfg, trace_id=0,)
 
@@ -118,4 +116,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    

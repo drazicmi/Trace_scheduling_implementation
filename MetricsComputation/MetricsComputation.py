@@ -52,8 +52,7 @@
 class MetricsComputer:
     """
         Computes quality and cost metrics for trace scheduling optimization.
-        These metrics help evaluate the trade-off between optimization
-        benefit and bookkeeping cost.
+        These metrics help evaluate the trade-off between optimization benefit and bookkeeping cost.
     """
 
     # Initialize the metrics computer with the ORIGINAL (pre-bookkeeping) CFG data
@@ -61,9 +60,7 @@ class MetricsComputer:
         self.blocks = blocks
         self.edges = edges
 
-    # ------------------------------------------------------------------
-    # Small helpers
-    # ------------------------------------------------------------------
+    # HELPER FUNCTIONS
 
     # Get all blocks belonging to a specific trace, in trace order.
     def _trace_blocks(self, trace_id):
@@ -81,9 +78,7 @@ class MetricsComputer:
         statements = getattr(block, "statements", None) or getattr(block, "instructions", [])
         return sum(1 for s in statements if s not in self.STRUCTURAL_MARKERS)
 
-    # ------------------------------------------------------------------
     # Scheduling quality
-    # ------------------------------------------------------------------
 
     # Cycle counts are read directly from the schedule results: "makespan"
     # already accounts for instruction latency (baseline: 1 unit/cycle

@@ -81,7 +81,7 @@ class TraceSelector:
             def edge_score(edge):
                 return edge.probability if edge.probability is not None else -1.0
 
-            # Select the edge with highest probability (greedy choice)
+            # Select the edge with the highest probability (greedy choice)
             best_edge = max(candidate_edges, key=edge_score)
 
             # Stop if best edge leads to already-visited block (creates a cycle)
