@@ -18,16 +18,12 @@ class Bookkeeper:
     def get_trace_blocks(self, trace_id=0):
         return [block for block in self.blocks if block.trace_id == trace_id]
 
-    # Collect all side entry and side exit edges from the CFG
-    # Side entries: edges entering the trace from outside
-    # Side exits: edges leaving the trace before completion
+    # Collect all side entry and side exit edges from the CFG. Side entries: edges entering the trace from outside; Side exits: edges leaving the trace before completion
     def collect_side_edges(self):
         return self.collect_side_edges_from(self.edges)
 
-    # Same as collect_side_edges but operates on an arbitrary edge list. Used so
-    # build_optimized_cfg can look up side entries/exits on the cloned edge list
-    # instead of the original self.edges, letting later steps remove or
-    # mutate the exact edge objects that will end up in the optimized CFG.
+    # Same as collect_side_edges but operates on an arbitrary edge list. Used so build_optimized_cfg can look up side entries/exits on the cloned edge list instead of the original self.edges
+    # letting later steps remove or mutate the exact edge objects that will end up in the optimized CFG.
     def collect_side_edges_from(self, edges):
         side_entries = []
         side_exits = []
@@ -40,7 +36,7 @@ class Bookkeeper:
 
         return side_entries, side_exits
 
-    # Detect operations that were moved earlier in the schedule than their original position.
+    # Detect operations that were moved earlier in the schedule than their original position
     def collect_moved_operations(self, schedule_result):
         movements = schedule_result.get("instruction_movements")
         scheduled = schedule_result.get("scheduled_instructions", [])
@@ -49,15 +45,6 @@ class Bookkeeper:
             moved_op_ids = {m["op_id"] for m in movements if "op_id" in m}
             if moved_op_ids:
                 return [item for item in scheduled if item.get("op_id") in moved_op_ids]
-
-        # Backward-compatible fallback (only used if instruction_movements is unavailable).
-        moved_ops = []
-        for item in scheduled:
-            sched_pos = item.get("schedule_cycle", item.get("schedule_index", 0))
-            orig_pos = item.get("original_index", 0)
-            if sched_pos < orig_pos:
-                moved_ops.append(item)
-        return moved_ops
     
     # Analyze which instructions need split compensation for a specific side exit.
     def get_split_compensation_ops(self, exit_edge, schedule_result, trace_id=0):
@@ -76,8 +63,7 @@ class Bookkeeper:
         if not moved_op_ids:
             return []
 
-        # Last cycle at which exit_edge.src's own instructions execute — this is the
-        # point at which the branch decision for this exact edge is effectively made
+        # Last cycle at which exit_edge.src's own instructions execute — this is the point at which the branch decision for this exact edge is effectively made
         exit_block_last_cycle = -1
         for item in scheduled:
             if item.get("block_id") == exit_edge.src and item.get("op_id") not in moved_op_ids:
@@ -96,9 +82,8 @@ class Bookkeeper:
             orig_block_index = trace_block_ids.index(orig_block)
             sched_cycle = item.get("schedule_cycle", 0)
 
-            # Only instructions originally strictly after this exit's block, and
-            # scheduled at/before this exit block finishes, are relevant to this
-            # specific side-exit boundary.
+            # Only instructions originally strictly after this exit's block, and scheduled at/before this exit block finishes
+            # are relevant to this specific side-exit boundary.
             if orig_block_index > exit_block_index and sched_cycle <= exit_block_last_cycle:
                 compensation_ops.append(item)
 
@@ -120,8 +105,7 @@ class Bookkeeper:
         if not moved_op_ids:
             return []
 
-        # First cycle at which entry_edge.dst's own instructions execute in the
-        # schedule — this is where a side-entry path would normally join in.
+        # First cycle at which entry_edge.dst's own instructions execute in the schedule — this is where a side-entry path would normally join in.
         entry_block_first_cycle = float('inf')
         for item in scheduled:
             if item.get("block_id") == entry_edge.dst and item.get("op_id") not in moved_op_ids:
@@ -143,9 +127,8 @@ class Bookkeeper:
             orig_block_index = trace_block_ids.index(orig_block)
             sched_cycle = item.get("schedule_cycle", 0)
 
-            # Only instructions originally at/after this entry's block, scheduled
-            # strictly before this entry block's normal start, are relevant to this
-            # specific side-entry boundary.
+            # Only instructions originally at/after this entry's block, scheduled strictly before this entry block's normal start
+            # are relevant to this specific side-entry boundary.
             if orig_block_index >= entry_block_index and sched_cycle < entry_block_first_cycle:
                 compensation_ops.append(item)
 
@@ -203,8 +186,7 @@ class Bookkeeper:
         edge.is_side_exit = is_side_exit
         return edge
 
-    # Reorder each trace block's visible statements to reflect the actual scheduled
-    # order, instead of leaving the original textual order in place.
+    # Reorder each trace block's visible statements to reflect the actual scheduled order, instead of leaving the original textual order in place.
     def reorder_blocks_by_schedule(self, blocks, schedule_result, trace_id=0):
         scheduled = schedule_result.get("scheduled_instructions", [])
         if not scheduled:
@@ -219,8 +201,7 @@ class Bookkeeper:
         trace_block_ids = [b.id for b in trace_blocks]
         trace_index = {bid: i for i, bid in enumerate(trace_block_ids)}
 
-        # Determine each block's own cycle window from the instructions that
-        # were not hoisted out of it (its "anchor" instructions)
+        # Determine each block's own cycle window from the instructions that were not hoisted out of it (its "anchor" instructions)
         anchor_items = [item for item in scheduled if item.get("op_id") not in moved_op_ids]
         block_last_cycle = {}
         for item in anchor_items:
@@ -237,9 +218,7 @@ class Bookkeeper:
             sched_cycle = item.get("schedule_cycle", 0)
             orig_pos = trace_index[orig_block]
 
-            # Walk earlier trace blocks (closest first) and relocate into the
-            # first one whose own instructions are still executing at/after
-            # this cycle
+            # Walk earlier trace blocks (closest first) and relocate into the first one whose own instructions are still executing at/after this cycle
             best_block = orig_block
             for bid in trace_block_ids[:orig_pos]:
                 last_cycle = block_last_cycle.get(bid)
@@ -248,9 +227,7 @@ class Bookkeeper:
                     break
             return best_block
 
-        # Group scheduled instructions (including control headers) by the
-        # block they ended up executing in (their destination, which may
-        # differ from their original block_id for genuinely hoisted ops)
+        # Group scheduled instructions by the block they ended up executing in
         by_block = {}
         for item in sorted(
             enumerate(scheduled),
@@ -272,8 +249,7 @@ class Bookkeeper:
                 continue
 
             original_statements = list(block.statements)
-            # Only pure structural markers (which never appear in the schedule) stay
-            # anchored at the front, everything else follows the schedule's order.
+            # Only pure structural markers (which never appear in the schedule) stay anchored at the front, everything else follows the schedule's order.
             leading_markers = [s for s in original_statements if s in pure_structural_markers]
             scheduled_order = by_block[block.id]
 
@@ -286,12 +262,10 @@ class Bookkeeper:
         # Clone CFG
         new_blocks, new_edges = self.clone_cfg()
 
-        # Reflect the scheduler's actual instruction order inside each trace block so
-        # the optimized CFG visibly shows the effect of scheduling
+        # Reflect the scheduler's actual instruction order inside each trace block so the optimized CFG visibly shows the effect of scheduling
         self.reorder_blocks_by_schedule(new_blocks, schedule_result, trace_id)
 
-        # Collect all side entry and exit edges (looked up on the cloned edges so the
-        # edges we later remove/replace are the same objects living in new_edges).
+        # Collect all side entry and exit edges
         side_entries, side_exits = self.collect_side_edges_from(new_edges)
 
         # Get all operations that were moved earlier in the schedule
@@ -342,12 +316,7 @@ class Bookkeeper:
                     )
                 )
 
-                # The direct exit_edge.src -> exit_edge.dst path is now superseded by
-                # exit_edge.src -> compensation_block -> exit_edge.dst. Keeping the
-                # original edge active would let the CFG silently skip the
-                # compensation code on some paths, corrupting the moved instructions'
-                # effects for anything reachable only via exit_edge.dst. Mark it for
-                # removal so only the rerouted path remains.
+                # The direct exit_edge.src -> exit_edge.dst path is now superseded by exit_edge.src -> compensation_block -> exit_edge.dst
                 edges_to_remove.add(id(exit_edge))
 
         # For each side entry, create compensation block
@@ -388,14 +357,10 @@ class Bookkeeper:
                     )
                 )
 
-                # the direct entry_edge.src ->
-                # entry_edge.dst path must not stay active alongside the rerouted
-                # compensation path, or the side-entry path could bypass the join
-                # compensation entirely.
+                # the direct entry_edge.src -> entry_edge.dst path must not stay active alongside the rerouted compensation path
                 edges_to_remove.add(id(entry_edge))
 
-        # Drop original edges that were superseded by a compensation reroute so the
-        # optimized CFG never has two conflicting active paths for the same boundary.
+        # Drop original edges that were superseded by a compensation reroute so the optimized CFG never has two conflicting active paths
         if edges_to_remove:
             new_edges = [e for e in new_edges if id(e) not in edges_to_remove]
             side_exits = [e for e in side_exits if id(e) not in edges_to_remove]
@@ -436,12 +401,6 @@ class Bookkeeper:
         }
 
     # Generate .dot format visualization of the CFG with compensation blocks highlighted
-    # Color scheme:
-    #   - Yellow: trace blocks (optimized path)
-    #   - Purple: bookkeeping/compensation blocks
-    #   - Red edges: trace edges (the optimized path)
-    #   - Blue dashed edges: side entries/exits
-    #   - Purple edges: compensation routing
     def to_dot(self, blocks, edges):
         lines = [
             "digraph CFG {",

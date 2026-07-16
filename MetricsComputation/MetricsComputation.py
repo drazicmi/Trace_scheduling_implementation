@@ -65,31 +65,26 @@ class MetricsComputer:
     def _outgoing(self, edges, block_id):
         return [e for e in edges if e.src == block_id]
 
-    # Count "real" instructions in a single block (skip pure structural
-    # markers, which do not represent actual scheduled work).
+    # Count "real" instructions in a single block (skip pure structural markers, which do not represent actual scheduled work).
     STRUCTURAL_MARKERS = ("ENTRY", "EXIT", "JOIN", "AFTER_LOOP", "AFTER_FOR")
 
     def _real_instruction_count(self, block):
         statements = getattr(block, "statements", None) or getattr(block, "instructions", [])
         return sum(1 for s in statements if s not in self.STRUCTURAL_MARKERS)
 
-    # Cycle counts are read directly from the schedule results: "makespan"
-    # already accounts for instruction latency (baseline: 1 unit/cycle
-    # sequential; optimized: list-scheduled across num_functional_units).
+    # Cycle counts are read directly from the schedule results: "makespan" already accounts for instruction latency (baseline: 1 unit/cycle, sequential; optimized: list-scheduled across num_functional_units).
     def compute_cycle_counts(self, baseline_result, schedule_result):
         return {
             "baseline_cycles": baseline_result.get("makespan", 0),
             "optimized_cycles": schedule_result.get("makespan", 0),
         }
 
-    # Critical path reduced if optimized makespan is strictly less than
-    # the baseline makespan.
+    # Critical path reduced if optimized makespan is strictly less than the baseline makespan.
     def critical_path_reduced(self, baseline_result, schedule_result):
         return schedule_result.get("makespan", 0) < baseline_result.get("makespan", 0)
 
-    # Compute the probability of staying on the trace at each in-trace
-    # branch point, and return the product (the probability the whole
-    # trace executes end-to-end as scheduled).
+    # Compute the probability of staying on the trace at each in-trace branch point, and return the product
+    # (the probability the whole trace executes end-to-end as scheduled).
     def compute_trace_path_weight(self, trace_id=0):
         trace_blocks = self._trace_blocks(trace_id)
         trace_block_ids = {b.id for b in trace_blocks}
@@ -109,15 +104,10 @@ class MetricsComputer:
 
         return weight
 
-    # Build the list of (weight, scheduled_length) pairs for every relevant
-    # path: the main trace path plus one path per side exit. `schedule_result`
-    # supplies per-instruction schedule_cycle data; `bookkeeping_result`
-    # supplies split-compensation instruction counts per exit so
-    # side-exit paths can include their bookkeeping cost. If
-    # bookkeeping_result is None, side paths are approximated using only the
-    # portion of the trace executed before the exit (no compensation added) --
-    # this happens for the baseline wsl, since bookkeeping/compensation only
-    # exists for the optimized schedule.
+    # Build the list of (weight, scheduled_length) pairs for every relevant path: the main trace path plus one path per side exit.
+    # `schedule_result` supplies per-instruction schedule_cycle data; `bookkeeping_result` supplies split-compensation instruction counts per exit
+    # so side-exit paths can include their bookkeeping cost. If bookkeeping_result is None, side paths are approximated using only the portion of the trace executed before the exit (no compensation added)
+    # this happens for the baseline wsl, since bookkeeping/compensation only exists for the optimized schedule.
     def _relevant_paths(self, schedule_result, trace_id=0, bookkeeping_result=None):
         trace_blocks = self._trace_blocks(trace_id)
         trace_block_ids = [b.id for b in trace_blocks]
@@ -126,9 +116,7 @@ class MetricsComputer:
 
         scheduled = schedule_result.get("scheduled_instructions", [])
 
-        # Last scheduled cycle at which each block's own instructions run,
-        # used to know "how far" execution got before leaving at a given
-        # side exit.
+        # Last scheduled cycle at which each block's own instructions run, used to know "how far" execution got before leaving at a given side exit.
         block_last_cycle = {}
         for item in scheduled:
             bid = item.get("block_id")
@@ -141,8 +129,7 @@ class MetricsComputer:
 
         paths = []
 
-        # 1) Main trace path: weight = probability of staying on-trace the
-        # whole way through, length = full schedule makespan.
+        # 1) Main trace path: weight = probability of staying on-trace the whole way through, length = full schedule makespan.
         trace_weight = self.compute_trace_path_weight(trace_id)
         paths.append({
             "kind": "trace",
@@ -151,18 +138,13 @@ class MetricsComputer:
             "length": makespan,
         })
 
-        # 2) One path per side exit: weight = probability of taking that
-        # specific off-trace branch, length = cycles executed up to that
-        # exit point, plus any split-compensation instructions that would
-        # replay on that path (each counted as 1 cycle of simple
-        # straight-line code).
+        # 2) One path per side exit: weight = probability of taking that specific off-trace branch, length = cycles executed up to that exit point,
+        # plus any split-compensation instructions that would replay on that path (each counted as 1 cycle of simple straight-line code).
         side_exits = [e for e in self.edges if getattr(e, "is_side_exit", False)]
 
         comp_count_by_exit = {}
         if bookkeeping_result is not None:
-            # Match compensation blocks back to their originating exit via
-            # the compensation edge label / src, since compensation edges
-            # are created 1:1 per side exit that needed one.
+            # Match compensation blocks back to their originating exit via the compensation edge label / src, since compensation edges are created 1:1 per side exit that needed one.
             comp_edges = bookkeeping_result.get("added_compensation_edges", [])
             comp_blocks = {b.id: b for b in bookkeeping_result.get("added_compensation_blocks", [])}
             for edge in comp_edges:
@@ -195,16 +177,13 @@ class MetricsComputer:
         wsl = sum(p["weight"] * p["length"] for p in paths)
         return wsl, paths
 
-    # Total instruction count across all blocks in a CFG (real instructions
-    # only, structural markers excluded). Used for both the pre-optimization
-    # and post-optimization block lists to compute code size increase.
+    # Total instruction count across all blocks in a CFG (real instructions only, structural markers excluded)
+    # Used for both the pre-optimization and post-optimization block lists to compute code size increase.
     def compute_total_instruction_count(self, blocks):
         return sum(self._real_instruction_count(b) for b in blocks)
 
-    # Code size increase = optimized total instructions - original total
-    # instructions. Since scheduling only reorders/hoists existing
-    # instructions (never deletes or duplicates them on the fast path), any
-    # increase comes entirely from added bookkeeping/compensation blocks.
+    # Code size increase = optimized total instructions - original total instructions. Since scheduling only reorders/hoists existing instructions (never deletes or duplicates them on the fast path)
+    # any increase comes entirely from added bookkeeping/compensation blocks.
     def compute_code_size_increase(self, optimized_blocks):
         original_total = self.compute_total_instruction_count(self.blocks)
         optimized_total = self.compute_total_instruction_count(optimized_blocks)
@@ -224,9 +203,7 @@ class MetricsComputer:
             "join_compensation_count": bookkeeping_result.get("join_compensation_count", 0),
         }
 
-    # Compute the full formal metrics report used by main.py's output phase.
-    # Returns a plain dict of primitive values (no CFG objects), ready to be
-    # formatted for console output.
+    # Compute the full formal metrics report used by main.py's output phase. Returns a plain dict of primitive values (no CFG objects), ready to be formatted for console output.
     def compute_formal_report(self, baseline_result, schedule_result, bookkeeping_result, trace_id=0):
         cycles = self.compute_cycle_counts(baseline_result, schedule_result)
         critical_path_reduced = self.critical_path_reduced(baseline_result, schedule_result)
@@ -259,28 +236,4 @@ class MetricsComputer:
                 "split_compensation_count": cost["split_compensation_count"],
                 "join_compensation_count": cost["join_compensation_count"],
             },
-        }
-
-    # ------------------------------------------------------------------
-    # Legacy/basic metrics (kept for backward compatibility with any other
-    # caller that used the original simple `compute` method).
-    # ------------------------------------------------------------------
-    def compute(self, trace_schedule_result, bookkeeping_result, trace_id=0):
-        trace_blocks = [block for block in self.blocks if block.trace_id == trace_id]
-        trace_edges = [edge for edge in self.edges if getattr(edge, "is_trace_edge", False)]
-
-        total_trace_probability = 0.0
-        for edge in trace_edges:
-            if edge.probability is not None:
-                total_trace_probability += edge.probability
-
-        return {
-            "trace_id": trace_id,
-            "trace_block_count": len(trace_blocks),
-            "trace_edge_count": len(trace_edges),
-            "scheduled_instruction_count": len(trace_schedule_result["scheduled_instructions"]),
-            "schedule_length": trace_schedule_result["schedule_length"],
-            "side_entry_count": len(bookkeeping_result["side_entries"]),
-            "side_exit_count": len(bookkeeping_result["side_exits"]),
-            "trace_probability_sum": total_trace_probability
         }
