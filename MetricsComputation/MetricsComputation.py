@@ -1,56 +1,7 @@
-"""
-    This module computes the formal evaluation metrics for trace scheduling:
-
-    1. Scheduling quality
-       - unoptimized (baseline) cycle count
-       - optimized cycle count
-       - weighted schedule length (WSL), baseline and optimized
-       - whether the critical path was reduced
-
-    2. Optimization cost
-       - total code size increase (instructions added to the CFG)
-       - number of added bookkeeping blocks
-       - number of added bookkeeping instructions
-
-    WSL definition used here:
-
-        W(S) = sum over all relevant paths j of ( Wj * |Sj| )
-
-    where Wj is the probability/weight of path j and |Sj| is that path's
-    scheduled length (in cycles).
-
-    "Relevant paths" for a single selected trace are defined as:
-      - the main trace path itself (the path the scheduler optimized),
-        weighted by the product of the branch probabilities of every
-        branch point inside the trace that has more than one outgoing
-        edge (i.e. how likely execution is to actually stay on the trace
-        all the way through), with scheduled length = the trace's own
-        makespan (in cycles).
-      - one side-exit path per side-exit edge leaving the trace, weighted
-        by the probability of taking that specific branch off the trace,
-        with scheduled length = the number of cycles/instructions executed
-        up to and including the point where control leaves the trace,
-        plus any split-compensation instructions replayed on that path
-        (each compensation instruction is conservatively counted as 1
-        cycle)
-
-    This mirrors the classical trace-scheduling cost model: the more
-    probable a path, the more it should dominate the weighted schedule
-    length, and any path that must run extra bookkeeping code pays for it
-    in its own |Sj|.
-
-    All of this is computed strictly from data already produced by
-    PythonToCFG (block/edge probabilities), TraceScheduling (schedule
-    results) and Bookkeeping (compensation results) -- no new profiling is
-    performed here.
-"""
-
 
 class MetricsComputer:
-    """
-        Computes quality and cost metrics for trace scheduling optimization.
-        These metrics help evaluate the trade-off between optimization benefit and bookkeeping cost.
-    """
+    # Computes quality and cost metrics for trace scheduling optimization
+    # These metrics help evaluate the trade-off between optimization benefit and bookkeeping cost.
 
     # Initialize the metrics computer with the original (pre-bookkeeping) CFG data
     def __init__(self, blocks, edges):
