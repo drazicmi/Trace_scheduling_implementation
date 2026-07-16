@@ -388,17 +388,7 @@ class Bookkeeper:
             "join_compensation_count": join_comp_count,
             "total_compensation_instructions": total_comp_instructions
         }
-    
-    # Simple bookkeeping summary without building full optimized CFG
-    def collect_bookkeeping(self, trace_id=0):
-        side_entries, side_exits = self.collect_side_edges()
-        
-        return {
-            "trace_id": trace_id,
-            "side_entries": [{"src": e.src, "dst": e.dst, "label": e.label} for e in side_entries],
-            "side_exits": [{"src": e.src, "dst": e.dst, "label": e.label} for e in side_exits],
-            "bookkeeping_block_count": len(side_entries) + len(side_exits)
-        }
+
 
     # Generate .dot format visualization of the CFG with compensation blocks highlighted
     def to_dot(self, blocks, edges):
