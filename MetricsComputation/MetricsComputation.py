@@ -1,6 +1,4 @@
 """
-    MetricsComputation phase
-
     This module computes the formal evaluation metrics for trace scheduling:
 
     1. Scheduling quality
@@ -22,20 +20,19 @@
     scheduled length (in cycles).
 
     "Relevant paths" for a single selected trace are defined as:
-      - the MAIN TRACE path itself (the path the scheduler optimized),
+      - the main trace path itself (the path the scheduler optimized),
         weighted by the product of the branch probabilities of every
-        branch point *inside* the trace that has more than one outgoing
+        branch point inside the trace that has more than one outgoing
         edge (i.e. how likely execution is to actually stay on the trace
         all the way through), with scheduled length = the trace's own
         makespan (in cycles).
-      - one SIDE-EXIT path per side-exit edge leaving the trace, weighted
+      - one side-exit path per side-exit edge leaving the trace, weighted
         by the probability of taking that specific branch off the trace,
         with scheduled length = the number of cycles/instructions executed
         up to and including the point where control leaves the trace,
         plus any split-compensation instructions replayed on that path
         (each compensation instruction is conservatively counted as 1
-        cycle, since bookkeeping code is simple straight-line code without
-        further list-scheduling applied to it).
+        cycle)
 
     This mirrors the classical trace-scheduling cost model: the more
     probable a path, the more it should dominate the weighted schedule
@@ -55,12 +52,10 @@ class MetricsComputer:
         These metrics help evaluate the trade-off between optimization benefit and bookkeeping cost.
     """
 
-    # Initialize the metrics computer with the ORIGINAL (pre-bookkeeping) CFG data
+    # Initialize the metrics computer with the original (pre-bookkeeping) CFG data
     def __init__(self, blocks, edges):
         self.blocks = blocks
         self.edges = edges
-
-    # HELPER FUNCTIONS
 
     # Get all blocks belonging to a specific trace, in trace order.
     def _trace_blocks(self, trace_id):
@@ -78,8 +73,6 @@ class MetricsComputer:
         statements = getattr(block, "statements", None) or getattr(block, "instructions", [])
         return sum(1 for s in statements if s not in self.STRUCTURAL_MARKERS)
 
-    # Scheduling quality
-
     # Cycle counts are read directly from the schedule results: "makespan"
     # already accounts for instruction latency (baseline: 1 unit/cycle
     # sequential; optimized: list-scheduled across num_functional_units).
@@ -89,7 +82,7 @@ class MetricsComputer:
             "optimized_cycles": schedule_result.get("makespan", 0),
         }
 
-    # Critical path reduced iff optimized makespan is strictly less than
+    # Critical path reduced if optimized makespan is strictly less than
     # the baseline makespan.
     def critical_path_reduced(self, baseline_result, schedule_result):
         return schedule_result.get("makespan", 0) < baseline_result.get("makespan", 0)
@@ -119,11 +112,11 @@ class MetricsComputer:
     # Build the list of (weight, scheduled_length) pairs for every relevant
     # path: the main trace path plus one path per side exit. `schedule_result`
     # supplies per-instruction schedule_cycle data; `bookkeeping_result`
-    # (optional) supplies split-compensation instruction counts per exit so
+    # supplies split-compensation instruction counts per exit so
     # side-exit paths can include their bookkeeping cost. If
     # bookkeeping_result is None, side paths are approximated using only the
     # portion of the trace executed before the exit (no compensation added) --
-    # this happens for the BASELINE WSL, since bookkeeping/compensation only
+    # this happens for the baseline wsl, since bookkeeping/compensation only
     # exists for the optimized schedule.
     def _relevant_paths(self, schedule_result, trace_id=0, bookkeeping_result=None):
         trace_blocks = self._trace_blocks(trace_id)
@@ -149,7 +142,7 @@ class MetricsComputer:
         paths = []
 
         # 1) Main trace path: weight = probability of staying on-trace the
-        #    whole way through; length = full schedule makespan.
+        # whole way through, length = full schedule makespan.
         trace_weight = self.compute_trace_path_weight(trace_id)
         paths.append({
             "kind": "trace",
@@ -159,10 +152,10 @@ class MetricsComputer:
         })
 
         # 2) One path per side exit: weight = probability of taking that
-        #    specific off-trace branch; length = cycles executed up to that
-        #    exit point, plus any split-compensation instructions that would
-        #    replay on that path (each counted as 1 cycle of simple
-        #    straight-line code).
+        # specific off-trace branch, length = cycles executed up to that
+        # exit point, plus any split-compensation instructions that would
+        # replay on that path (each counted as 1 cycle of simple
+        # straight-line code).
         side_exits = [e for e in self.edges if getattr(e, "is_side_exit", False)]
 
         comp_count_by_exit = {}
@@ -202,11 +195,7 @@ class MetricsComputer:
         wsl = sum(p["weight"] * p["length"] for p in paths)
         return wsl, paths
 
-    # ------------------------------------------------------------------
-    # Optimization cost
-    # ------------------------------------------------------------------
-
-    # Total instruction count across ALL blocks in a CFG (real instructions
+    # Total instruction count across all blocks in a CFG (real instructions
     # only, structural markers excluded). Used for both the pre-optimization
     # and post-optimization block lists to compute code size increase.
     def compute_total_instruction_count(self, blocks):
@@ -234,10 +223,6 @@ class MetricsComputer:
             "split_compensation_count": bookkeeping_result.get("split_compensation_count", 0),
             "join_compensation_count": bookkeeping_result.get("join_compensation_count", 0),
         }
-
-    # ------------------------------------------------------------------
-    # Combined report
-    # ------------------------------------------------------------------
 
     # Compute the full formal metrics report used by main.py's output phase.
     # Returns a plain dict of primitive values (no CFG objects), ready to be

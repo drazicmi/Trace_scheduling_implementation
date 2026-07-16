@@ -7,8 +7,8 @@ class Bookkeeper:
     def __init__(self, blocks, edges, block_factory=None, edge_factory=None):
         self.blocks = blocks
         self.edges = edges
-        self.block_factory = block_factory  # Optional factory to create Block objects
-        self.edge_factory = edge_factory    # Optional factory to create Edge objects
+        self.block_factory = block_factory
+        self.edge_factory = edge_factory
 
     # Get set of block IDs belonging to a trace
     def get_trace_block_ids(self, trace_id=0):
@@ -25,8 +25,8 @@ class Bookkeeper:
         return self.collect_side_edges_from(self.edges)
 
     # Same as collect_side_edges but operates on an arbitrary edge list. Used so
-    # build_optimized_cfg can look up side entries/exits on the CLONED edge list
-    # (new_edges) instead of the original self.edges, letting later steps remove or
+    # build_optimized_cfg can look up side entries/exits on the cloned edge list
+    # instead of the original self.edges, letting later steps remove or
     # mutate the exact edge objects that will end up in the optimized CFG.
     def collect_side_edges_from(self, edges):
         side_entries = []
@@ -59,7 +59,7 @@ class Bookkeeper:
                 moved_ops.append(item)
         return moved_ops
     
-    # Analyze which instructions need split compensation for a SPECIFIC side exit.
+    # Analyze which instructions need split compensation for a specific side exit.
     def get_split_compensation_ops(self, exit_edge, schedule_result, trace_id=0):
         trace_blocks = self.get_trace_blocks(trace_id)
         trace_block_ids = [b.id for b in trace_blocks]
@@ -96,15 +96,15 @@ class Bookkeeper:
             orig_block_index = trace_block_ids.index(orig_block)
             sched_cycle = item.get("schedule_cycle", 0)
 
-            # Only instructions originally strictly after THIS exit's block, and
-            # scheduled at/before this exit block finishes, are relevant to THIS
+            # Only instructions originally strictly after this exit's block, and
+            # scheduled at/before this exit block finishes, are relevant to this
             # specific side-exit boundary.
             if orig_block_index > exit_block_index and sched_cycle <= exit_block_last_cycle:
                 compensation_ops.append(item)
 
         return compensation_ops
 
-    # Analyze which instructions need join compensation for a SPECIFIC side entry.
+    # Analyze which instructions need join compensation for a specific side entry.
     def get_join_compensation_ops(self, entry_edge, schedule_result, trace_id=0):
         trace_blocks = self.get_trace_blocks(trace_id)
         trace_block_ids = [b.id for b in trace_blocks]
@@ -143,8 +143,8 @@ class Bookkeeper:
             orig_block_index = trace_block_ids.index(orig_block)
             sched_cycle = item.get("schedule_cycle", 0)
 
-            # Only instructions originally at/after THIS entry's block, scheduled
-            # strictly before this entry block's normal start, are relevant to THIS
+            # Only instructions originally at/after this entry's block, scheduled
+            # strictly before this entry block's normal start, are relevant to this
             # specific side-entry boundary.
             if orig_block_index >= entry_block_index and sched_cycle < entry_block_first_cycle:
                 compensation_ops.append(item)
@@ -181,17 +181,7 @@ class Bookkeeper:
         return block
 
     # Create a new CFG edge (uses factory if provided, otherwise creates dynamic object)
-    def make_edge(
-        self,
-        src,
-        dst,
-        label="",
-        count=0,
-        probability=None,
-        is_trace_edge=False,
-        is_side_entry=False,
-        is_side_exit=False
-    ):
+    def make_edge(self,src,dst,label="",count=0,probability=None,is_trace_edge=False,is_side_entry=False,is_side_exit=False):
         if self.edge_factory is not None:
             edge = self.edge_factory(src, dst, label)
             edge.count = count
@@ -213,7 +203,7 @@ class Bookkeeper:
         edge.is_side_exit = is_side_exit
         return edge
 
-    # Reorder each trace block's visible statements to reflect the ACTUAL scheduled
+    # Reorder each trace block's visible statements to reflect the actual scheduled
     # order, instead of leaving the original textual order in place.
     def reorder_blocks_by_schedule(self, blocks, schedule_result, trace_id=0):
         scheduled = schedule_result.get("scheduled_instructions", [])
@@ -230,7 +220,7 @@ class Bookkeeper:
         trace_index = {bid: i for i, bid in enumerate(trace_block_ids)}
 
         # Determine each block's own cycle window from the instructions that
-        # were NOT hoisted out of it (its "anchor" instructions)
+        # were not hoisted out of it (its "anchor" instructions)
         anchor_items = [item for item in scheduled if item.get("op_id") not in moved_op_ids]
         block_last_cycle = {}
         for item in anchor_items:
@@ -283,7 +273,7 @@ class Bookkeeper:
 
             original_statements = list(block.statements)
             # Only pure structural markers (which never appear in the schedule) stay
-            # anchored at the front; everything else follows the schedule's order.
+            # anchored at the front, everything else follows the schedule's order.
             leading_markers = [s for s in original_statements if s in pure_structural_markers]
             scheduled_order = by_block[block.id]
 
@@ -297,11 +287,10 @@ class Bookkeeper:
         new_blocks, new_edges = self.clone_cfg()
 
         # Reflect the scheduler's actual instruction order inside each trace block so
-        # the optimized CFG visibly shows the effect of scheduling, not just the
-        # original program order relabeled as "optimized".
+        # the optimized CFG visibly shows the effect of scheduling
         self.reorder_blocks_by_schedule(new_blocks, schedule_result, trace_id)
 
-        # Collect all side entry and exit edges (looked up on the CLONED edges so the
+        # Collect all side entry and exit edges (looked up on the cloned edges so the
         # edges we later remove/replace are the same objects living in new_edges).
         side_entries, side_exits = self.collect_side_edges_from(new_edges)
 
