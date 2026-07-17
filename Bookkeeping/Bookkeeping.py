@@ -45,6 +45,8 @@ class Bookkeeper:
             moved_op_ids = {m["op_id"] for m in movements if "op_id" in m}
             if moved_op_ids:
                 return [item for item in scheduled if item.get("op_id") in moved_op_ids]
+
+        return []
     
     # Analyze which instructions need split compensation for a specific side exit.
     def get_split_compensation_ops(self, exit_edge, schedule_result, trace_id=0):
@@ -134,6 +136,32 @@ class Bookkeeper:
 
         return compensation_ops
 
+    # Find the side-entry edge that the off-trace region reached via exit_edge eventually rejoins the trace through.
+    # Walks forward from exit_edge.dst across purely off-trace edges (both endpoints outside the trace) until it reaches a block with an outgoing edge that lands back inside the trace (a side entry).
+    # Returns None if no such path is found (e.g. the off-trace region never rejoins, such as a genuine early return).
+    def find_paired_join_edge(self, exit_edge, edges, trace_id=0):
+        trace_block_ids = self.get_trace_block_ids(trace_id)
+        visited = set()
+        current = exit_edge.dst
+
+        while current not in trace_block_ids and current not in visited:
+            visited.add(current)
+            outgoing = [e for e in edges if e.src == current]
+
+            # A side entry from this block rejoins the trace directly — this is the paired join edge.
+            join_candidates = [e for e in outgoing if e.dst in trace_block_ids]
+            if join_candidates:
+                return join_candidates[0]
+
+            # Otherwise keep following the off-trace region forward (assumes a single successor per
+            # off-trace block, true for the straight-line if/else regions this project generates).
+            off_trace_next = [e for e in outgoing if e.dst not in trace_block_ids]
+            if not off_trace_next:
+                return None
+            current = off_trace_next[0].dst
+
+        return None
+
     # Create a deep copy of the CFG for modification
     def clone_cfg(self):
         new_blocks = copy.deepcopy(self.blocks)
@@ -164,7 +192,7 @@ class Bookkeeper:
         return block
 
     # Create a new CFG edge (uses factory if provided, otherwise creates dynamic object)
-    def make_edge(self,src,dst,label="",count=0,probability=None,is_trace_edge=False,is_side_entry=False,is_side_exit=False):
+    def make_edge(self, src, dst, label="", count=0, probability=None, is_trace_edge=False, is_side_entry=False, is_side_exit=False):
         if self.edge_factory is not None:
             edge = self.edge_factory(src, dst, label)
             edge.count = count
@@ -278,6 +306,11 @@ class Bookkeeper:
         split_comp_count = 0
         join_comp_count = 0
 
+        # Track, per side-entry edge (by id), the op_ids already guaranteed to have executed via a split
+        # compensation block earlier on the same off-trace path — so the join-compensation pass below never
+        # re-inserts an instruction that a paired split-compensation block already replayed on that path.
+        covered_by_split = {}
+
         # For each side exit, create compensation block
         for exit_edge in side_exits:
             # Get instructions that need compensation for this specific exit
@@ -319,10 +352,22 @@ class Bookkeeper:
                 # The direct exit_edge.src -> exit_edge.dst path is now superseded by exit_edge.src -> compensation_block -> exit_edge.dst
                 edges_to_remove.add(id(exit_edge))
 
+                # Record which op_ids this split compensation block already replays on this off-trace path,
+                # so the paired join edge (if any) doesn't duplicate them.
+                paired_join_edge = self.find_paired_join_edge(exit_edge, new_edges, trace_id)
+                if paired_join_edge is not None:
+                    covered = covered_by_split.setdefault(id(paired_join_edge), set())
+                    covered.update(op.get("op_id") for op in comp_ops)
+
         # For each side entry, create compensation block
         for entry_edge in side_entries:
             # Get instructions that need compensation for this specific entry
             comp_ops = self.get_join_compensation_ops(entry_edge, schedule_result, trace_id)
+
+            # Drop any op already replayed by a paired split-compensation block earlier on this same
+            # off-trace path — only the instructions NOT already covered still need a join copy.
+            already_covered = covered_by_split.get(id(entry_edge), set())
+            comp_ops = [op for op in comp_ops if op.get("op_id") not in already_covered]
 
             if comp_ops:
                 # Create compensation block with all required instructions
@@ -388,7 +433,6 @@ class Bookkeeper:
             "join_compensation_count": join_comp_count,
             "total_compensation_instructions": total_comp_instructions
         }
-
 
     # Generate .dot format visualization of the CFG with compensation blocks highlighted
     def to_dot(self, blocks, edges):

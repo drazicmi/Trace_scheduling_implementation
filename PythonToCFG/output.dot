@@ -2,15 +2,22 @@ digraph CFG {
   rankdir=TB;
   node [shape=box, fontname=Helvetica];
   B0 [label="B0: ENTRY"];
-  B1 [label="B1: base = x + 1\nIF[0] x > 2"];
+  B1 [label="B1: base = x + 1\nratio = w + 1\nIF[0] x > 2"];
   B2 [label="B2: light = y + 1\np = x + y\nq = z + w\nmixed = p + q\ndeep = mixed * 2\nbranch_result = deep + light"];
   B3 [label="B3: p = x - y\nq = z - w\nbranch_result = p - q"];
-  B4 [label="B4: JOIN\nshared1 = branch_result + 10\nshared2 = base + z\nfinal = shared1 + shared2\nreturn final"];
-  B5 [label="B5: EXIT"];
+  B4 [label="B4: JOIN\nshared1 = branch_result + 10\nshared2 = base + z\nIF[1] y > 5"];
+  B5 [label="B5: r = branch_result + shared1\ns = r + shared2\nsecond_result = s * 2"];
+  B6 [label="B6: second_result = branch_result - shared1"];
+  B7 [label="B7: JOIN\nshared3 = ratio + shared2\nfinal = second_result + shared3\nreturn final"];
+  B8 [label="B8: EXIT"];
   B0 -> B1;
   B1 -> B2 [label="True | 0.83"];
   B1 -> B3 [label="False | 0.17"];
   B2 -> B4;
   B3 -> B4;
-  B4 -> B5;
+  B4 -> B5 [label="True | 0.67"];
+  B4 -> B6 [label="False | 0.33"];
+  B5 -> B7;
+  B6 -> B7;
+  B7 -> B8;
 }

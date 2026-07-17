@@ -4,8 +4,9 @@
 """
 
 
-def bookkeeping_case(x, y, z, w):
+def bookkeeping_two_branches(x, y, z, w):
     base = x + 1
+    ratio = w + 1
 
     if x > 2:
         light = y + 1
@@ -21,7 +22,16 @@ def bookkeeping_case(x, y, z, w):
 
     shared1 = branch_result + 10
     shared2 = base + z
-    final = shared1 + shared2
+
+    if y > 5:
+        r = branch_result + shared1
+        s = r + shared2
+        second_result = s * 2
+    else:
+        second_result = branch_result - shared1
+
+    shared3 = ratio + shared2
+    final = second_result + shared3
     return final
 
 

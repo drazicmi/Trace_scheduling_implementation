@@ -3,7 +3,6 @@ import copy    # Deepcopy tree
 from dataclasses import dataclass, field    # Annotation that generates dunder methods (like __init__, __repr__, etc.)
 from typing import List, Optional     # DataTypes used as fields in classes
 from collections import defaultdict    # DataType that creates
-
 import graphviz
 from graphviz import Source     # CFG visualisation library
 
@@ -592,13 +591,10 @@ def extract_target_function_and_inputs(tree):
 
     return target_function, test_inputs
 
-import ast
-import graphviz
-
 
 # AST visualization
-def ast_to_graphviz(node, graph=None, parent=None, counter=[0], depth=1,
-                     max_depth=None, skip_assign_names=("TEST_INPUTS",)):
+def ast_to_graphviz(node, graph=None, parent=None, counter=[0], depth=1, max_depth=None, skip_assign_names=("TEST_INPUTS",)):
+
     if graph is None:
         graph = graphviz.Digraph()
     node_id = str(counter[0])
@@ -614,7 +610,7 @@ def ast_to_graphviz(node, graph=None, parent=None, counter=[0], depth=1,
     if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in skip_assign_names for t in node.targets):
         stub_id = str(counter[0])
         counter[0] += 1
-        graph.node(stub_id, "[... data omitted ...]", shape="plaintext")
+        graph.node(stub_id, "[data excluded]", shape="plaintext")
         graph.edge(node_id, stub_id)
         return graph
 
@@ -646,7 +642,7 @@ def build_profiled_cfg(input_file='input.py', output_dot=None, output_png=None):
     # Parse the python code and get AST (Abstract syntax tree) in return
     tree = ast.parse(source, filename=input_file)
 
-    # Display ASTT
+    # Display AST
     g = ast_to_graphviz(tree)
     g.render("ast_tree", format="svg", cleanup=True)
 
